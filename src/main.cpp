@@ -11,11 +11,13 @@ enum    Pins
     LED_RED         = 4,
     LED_GREEN       = 6,
     LED_BLUE        = 8,
-    SPEAKER_PIN     = 11,
+    IR_MENU_LED_PIN = 10,
+    SPEAKER_PIN     = 12,
 };
 
 StdIR::Receiver     IR(IR_PIN);
 RGB_Led             RGB(LED_RED, LED_GREEN, LED_BLUE);
+DigitalOutputPin    IR_menu_led(IR_MENU_LED_PIN);
 ToneOutputPin       speaker(SPEAKER_PIN);
 Timer               timer;
 Timer               IR_mode_timer;
@@ -101,6 +103,11 @@ void setup()
 {
     Logger::Initialize();
 
+    RGB.GetRed().On();          delay(1000); RGB.SetOff();
+    RGB.GetGreen().On();        delay(1000); RGB.SetOff();
+    RGB.GetBlue().On();         delay(1000); RGB.SetOff();
+    IR_menu_led.On();           delay(1000); IR_menu_led.Off();
+
     restore_to_factory_defaults();
 
     load();
@@ -129,13 +136,37 @@ void restore_to_factory_defaults()
     MAX_TIME_INTERVAL_SECONDS = DEFAULT_MAX_TIME_INTERVAL_SECONDS;
 }
 //==========================================================
+void set_IR_mode(bool on)
+{
+    if(on)
+    {
+        if(IR_menu_led.IsOff())
+        {
+            LOGGER << "IR mode ON" << NL;
+            IR_menu_led.On();
+        }
+
+        IR_mode_timer.StartOnce(30 * 1000);
+    }
+    else
+    {
+        if(IR_menu_led.IsOn())
+        {
+            LOGGER << "IR mode OFF" << NL;
+            IR_menu_led.Off();
+            IR_mode_timer.Stop();
+        }
+    }
+}
+//==========================================================
 void switch_to_functional_mode()
 {
     speaker.Quiet();
-    
-    IR_mode_timer.Stop();
-    start_timer();
-    update_leds();
+    timer.Stop();
+
+    set_IR_mode(false);
+
+    toggle_speaker();
 }
 //==========================================================
 #define get_random(minval, maxval)  ((Random::Get() % (maxval - minval + 1)) + minval)
@@ -144,7 +175,7 @@ void start_timer()
 {
     uint32_t seconds = get_random(MIN_TIME_INTERVAL_SECONDS, MAX_TIME_INTERVAL_SECONDS);
     timer.StartOnce(seconds * 1000);
-    LOGGER << "Timer triggered for" << seconds << " seconds" << NL;
+    LOGGER << "Timer triggered for " << seconds << " seconds" << NL;
 }
 //==========================================================
 void update_leds()
@@ -183,11 +214,6 @@ void toggle_speaker()
     start_timer();
 }
 //==========================================================
-void start_IR_timer()
-{
-    IR_mode_timer.StartOnce(30 * 1000);
-}
-//==========================================================
 void check_IR()
 {
     StdIR::Key ir_key;
@@ -207,7 +233,7 @@ void check_IR()
         delay(250);
         led.Off();
 
-        start_IR_timer();
+        set_IR_mode(true);
 
         return;
     }
@@ -233,16 +259,29 @@ bool change_frequency(uint32_t& freq, int add, uint32_t margin)
         return false;
 
     freq += add;
+
+    LOGGER << (ir_status == SET_LOWEST ? "Lowest" : "Highest") << " frequency set to " << freq << " kHz" << NL;
+
     play_sound(freq);
     store();
 
     return true;   
 }
 //==========================================================
+bool set_max_time_interval(uint32_t seconds)
+{
+    MAX_TIME_INTERVAL_SECONDS = seconds;
+    store();
+    LOGGER << "Max. time interval set to " << seconds << " seconds" << NL;
+    return true;
+}
+//==========================================================
 bool proceed_IR_key(StdIR::Key ir_key)
 {
     static bool human = false;
 
+    LOGGER << "IR key: " << StdIR::GetName(ir_key) << NL;
+    
     if(!IR_mode)
     {
         if(StdIR::OK == ir_key)
@@ -251,7 +290,7 @@ bool proceed_IR_key(StdIR::Key ir_key)
             RGB.SetOff();
             timer.Stop();
 
-            start_IR_timer();
+            set_IR_mode(true);
             
             ir_status   = MAIN;
             human       = false;
@@ -267,7 +306,7 @@ bool proceed_IR_key(StdIR::Key ir_key)
         case StdIR::OK      : 
             switch(ir_status)
             {
-                case MAIN           :   IR_mode_timer.Stop();
+                case MAIN           :   set_IR_mode(false);
                                         return true;
                 case SET_LOWEST     :   
                 case SET_HIGHEST    :   
@@ -328,16 +367,17 @@ bool proceed_IR_key(StdIR::Key ir_key)
                                         return true;
 
                 case FACTORY_RESTORE:   restore_to_factory_defaults();
+                                        store();
+                                        LOGGER << "Restored to factory defaults" << NL;
                                         ir_status = MAIN;
                                         return true;
             }
             
             return false;
 
-        case StdIR::N0          :   MAX_TIME_INTERVAL_SECONDS = DEFAULT_MAX_TIME_INTERVAL_SECONDS;
-                                    return true;
+        case StdIR::N0          :   return set_max_time_interval(DEFAULT_MAX_TIME_INTERVAL_SECONDS);
 
-        #define TREATE_NUMKEY( n )  case StdIR::N##n : MAX_TIME_INTERVAL_SECONDS = n * 10;  return true
+        #define TREATE_NUMKEY( n )  case StdIR::N##n : return set_max_time_interval( n * 10 )
 
         TREATE_NUMKEY( 1 );
         TREATE_NUMKEY( 2 );
