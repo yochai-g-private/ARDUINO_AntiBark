@@ -115,6 +115,8 @@ void setup()
     IR.Begin();
 
     switch_to_functional_mode();
+
+    LOGGER << "Ready!" << NL;
 }
 //==========================================================
 void loop() 
@@ -161,8 +163,10 @@ void set_IR_mode(bool on)
 //==========================================================
 void switch_to_functional_mode()
 {
+    MyCfg::instance.Show();
+
     speaker.Quiet();
-    timer.Stop();
+    timer.StartOnce(1);
 
     set_IR_mode(false);
 
@@ -255,6 +259,7 @@ bool change_frequency(uint32_t& freq, int add, uint32_t margin)
 {
     add *= FRQUENCY_STEP_kHz;
 
+    LOGGER << "freq=" << freq << ", margin=" << margin << ", add=" << add << NL;
     if(margin == (freq + add))
         return false;
 
@@ -329,7 +334,7 @@ bool proceed_IR_key(StdIR::Key ir_key)
             switch(ir_status)
             {
                 case SET_LOWEST     :   return change_frequency(MIN_FREQUENCY_kHz, 1, MAX_FREQUENCY_kHz);
-                case SET_HIGHEST    :   return change_frequency(MAX_FREQUENCY_kHz, 1, __MAX_FREQUENCY_kHz+1);
+                case SET_HIGHEST    :   return change_frequency(MAX_FREQUENCY_kHz, 1, __MAX_FREQUENCY_kHz);
             }
             
             return false;
@@ -337,7 +342,7 @@ bool proceed_IR_key(StdIR::Key ir_key)
         case StdIR::DOWN        :   
             switch(ir_status)
             {
-                case SET_LOWEST     :   return change_frequency(MIN_FREQUENCY_kHz, -1, __MIN_FREQUENCY_kHz-1);
+                case SET_LOWEST     :   return change_frequency(MIN_FREQUENCY_kHz, -1, __MIN_FREQUENCY_kHz);
                 case SET_HIGHEST    :   return change_frequency(MAX_FREQUENCY_kHz, -1, MIN_FREQUENCY_kHz);
             }
             
